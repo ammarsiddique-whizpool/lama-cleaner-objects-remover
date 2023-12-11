@@ -207,6 +207,7 @@ export default function Editor() {
       if (!context) {
         return
       }
+      console.log("=======>draw the mask on image")
       console.log(
         `[draw] render size: ${render.width}x${render.height} image size: ${imageWidth}x${imageHeight} canvas size: ${context.canvas.width}x${context.canvas.height}`
       )
@@ -300,7 +301,7 @@ export default function Editor() {
 
   const drawOnCurrentRender = useCallback(
     (lineGroup: LineGroup) => {
-      console.log('[drawOnCurrentRender] draw on current render')
+      console.log('[drawOnCurrentRender] ??? ??? ? draw on current render')
       if (renders.length === 0) {
         draw(original, lineGroup)
       } else {
@@ -384,6 +385,19 @@ export default function Editor() {
       }
 
       try {
+       console.log("targetFile=>",targetFile)
+       console.log("settings=>",settings)
+       console.log("croperRect=>",croperRect)
+       console.log("promptVal=>",promptVal)
+       console.log("negativePromptVal=>",negativePromptVal)
+       console.log("seedVal=>",seedVal)
+       console.log("useCustomMask=>",useCustomMask)
+       console.log("maskCanvas.toDataURL()=>",maskCanvas.toDataURL())
+
+       console.log("customMask customMask=>",customMask)
+       console.log("paintByExampleImage=>",paintByExampleImage)
+
+
         const res = await inpaint(
           targetFile,
           settings,

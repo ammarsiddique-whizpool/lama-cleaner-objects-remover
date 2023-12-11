@@ -96,6 +96,12 @@ export default async function inpaint(
     'controlnet_method',
     ControlNetMethodMap[settings.controlnetMethod.toString()]
   )
+  const formDataObject: { [key: string]: any } = {};
+  fd.forEach((value, key) => {
+    formDataObject[key] = value;
+  });
+
+  console.log(formDataObject);
 
   try {
     const res = await fetch(`${API_ENDPOINT}/inpaint`, {

@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-import os
+import os,sys
 import hashlib
-
+from loguru import logger
+logger.remove()  # Remove the default configuration
+logger.add(sys.stdout, level="INFO")
 os.environ["PYTORCH_ENABLE_MPS_FALLBACK"] = "1"
-
 import imghdr
 import io
 import logging
@@ -11,13 +12,12 @@ import multiprocessing
 import random
 import time
 from pathlib import Path
-
 import cv2
 import numpy as np
 import torch
 from PIL import Image
 from loguru import logger
-
+import requests
 from lama_cleaner.const import SD15_MODELS
 from lama_cleaner.file_manager import FileManager
 from lama_cleaner.model.utils import torch_gc
@@ -31,6 +31,8 @@ from lama_cleaner.plugins import (
     RestoreFormerPlugin,
     AnimeSeg,
 )
+from urllib.parse import urlparse
+
 from lama_cleaner.schema import Config
 
 try:
@@ -68,7 +70,6 @@ NUM_THREADS = str(multiprocessing.cpu_count())
 
 # fix libomp problem on windows https://github.com/Sanster/lama-cleaner/issues/56
 os.environ["KMP_DUPLICATE_LIB_OK"] = "True"
-
 os.environ["OMP_NUM_THREADS"] = NUM_THREADS
 os.environ["OPENBLAS_NUM_THREADS"] = NUM_THREADS
 os.environ["MKL_NUM_THREADS"] = NUM_THREADS
@@ -76,9 +77,7 @@ os.environ["VECLIB_MAXIMUM_THREADS"] = NUM_THREADS
 os.environ["NUMEXPR_NUM_THREADS"] = NUM_THREADS
 if os.environ.get("CACHE_DIR"):
     os.environ["TORCH_HOME"] = os.environ["CACHE_DIR"]
-
 BUILD_DIR = os.environ.get("LAMA_CLEANER_BUILD_DIR", "app/build")
-
 
 class NoFlaskwebgui(logging.Filter):
     def filter(self, record):
@@ -94,7 +93,6 @@ class NoFlaskwebgui(logging.Filter):
 
 
 logging.getLogger("werkzeug").addFilter(NoFlaskwebgui())
-
 app = Flask(__name__, static_folder=os.path.join(BUILD_DIR, "static"))
 app.config["JSON_AS_ASCII"] = False
 CORS(app, expose_headers=["Content-Disposition"])
@@ -122,7 +120,18 @@ def get_image_ext(img_bytes):
     w = imghdr.what("", img_bytes)
     if w is None:
         w = "jpeg"
+
     return w
+
+def get_image_extension(orignal_image):
+    # Parse the URL to get the path
+    url_path = urlparse(orignal_image.url).path
+    # Get the file extension from the path
+    file_extension = Path(url_path).suffix.lower()
+    file_extension=file_extension.replace('.','')
+    if file_extension == 'jpg' or file_extension == 'jpeg':
+        file_extension='jpeg'
+    return file_extension
 
 
 def diffuser_callback(i, t, latents):
@@ -210,14 +219,23 @@ def media_thumbnail_file(tab, filename):
 
 @app.route("/inpaint", methods=["POST"])
 def process():
+    print("im iin inpaint")
+    # logging.info("iiiiin inpaint")
     input = request.files
+    print("input==>:",request.files)
+    print("request.form is:",request.form)
+
     # RGB
     origin_image_bytes = input["image"].read()
     image, alpha_channel, exif_infos = load_img(origin_image_bytes, return_exif=True)
-
     mask, _ = load_img(input["mask"].read(), gray=True)
+    # cv2.imshow("mask", cv2.resize(mask, (500, 500)))
+    # cv2.waitKey(0)
+    # cv2.destroyAllWindows()
     mask = cv2.threshold(mask, 127, 255, cv2.THRESH_BINARY)[1]
-
+    # cv2.imshow("mask mask mask", cv2.resize(mask, (500, 500)))
+    # cv2.waitKey(0)
+    # cv2.destroyAllWindows()
     if image.shape[:2] != mask.shape[:2]:
         return (
             f"Mask shape{mask.shape[:2]} not queal to Image shape{image.shape[:2]}",
@@ -229,7 +247,7 @@ def process():
 
     form = request.form
     size_limit = max(image.shape)
-
+    print("input is:::",input)
     if "paintByExampleImage" in input:
         paint_by_example_example_image, _ = load_img(
             input["paintByExampleImage"].read()
@@ -301,6 +319,9 @@ def process():
         torch_gc()
 
     res_np_img = cv2.cvtColor(res_np_img.astype(np.uint8), cv2.COLOR_BGR2RGB)
+    # cv2.imshow("img", cv2.resize(res_np_img, (500, 500)))
+    # cv2.waitKey(0)
+    # cv2.destroyAllWindows()
     if alpha_channel is not None:
         if alpha_channel.shape[:2] != res_np_img.shape[:2]:
             alpha_channel = cv2.resize(
@@ -320,7 +341,13 @@ def process():
             exif_infos=exif_infos,
         )
     )
-
+    print("bytes_io:",bytes_io)
+    image_data = bytes_io.getvalue()
+    image_np = np.array(Image.open(io.BytesIO(image_data)))
+    image_rgb = cv2.cvtColor(image_np, cv2.COLOR_BGR2RGB)
+    cv2.imshow("img image_np", cv2.resize(image_rgb, (500, 500)))
+    cv2.waitKey(0)
+    cv2.destroyAllWindows()
     response = make_response(
         send_file(
             # io.BytesIO(numpy_to_bytes(res_np_img, ext)),
@@ -329,7 +356,6 @@ def process():
         )
     )
     response.headers["X-Seed"] = str(config.sd_seed)
-
     socketio.emit("diffusion_finish")
     return response
 
@@ -459,7 +485,7 @@ def switch_model():
 def index():
     return send_file(os.path.join(BUILD_DIR, "index.html"))
 
-
+# Set The Input Photo here
 @app.route("/inputimage")
 def set_input_photo():
     if input_image_path:
@@ -620,3 +646,128 @@ def main(args):
             debug=args.debug,
             allow_unsafe_werkzeug=True,
         )
+
+
+
+@app.route("/RemoveObjects", methods=["POST"])
+def ProcessRemoveObjects():
+    form = request.form
+
+    orignalImage = requests.get(form["image"])
+    origin_image_bytes = np.frombuffer(orignalImage.content, dtype=np.uint8)
+
+    maskImage = requests.get(form["mask"])
+    maskImage = np.frombuffer(maskImage.content, dtype=np.uint8)
+
+    # RGB
+    image, alpha_channel, exif_infos = load_img(origin_image_bytes, return_exif=True)
+    mask, _ = load_img(maskImage, gray=True)
+    mask = cv2.threshold(mask, 127, 255, cv2.THRESH_BINARY)[1]
+    if image.shape[:2] != mask.shape[:2]:
+        return (
+            f"Mask shape{mask.shape[:2]} not queal to Image shape{image.shape[:2]}",
+            400,
+        )
+
+    original_shape = image.shape
+    interpolation = cv2.INTER_CUBIC
+
+    size_limit = max(image.shape)
+    paint_by_example_example_image = None
+    config = Config(
+        ldm_steps=form["ldmSteps"],
+        ldm_sampler=form["ldmSampler"],
+        hd_strategy=form["hdStrategy"],
+        zits_wireframe=form["zitsWireframe"],
+        hd_strategy_crop_margin=form["hdStrategyCropMargin"],
+        hd_strategy_crop_trigger_size=form["hdStrategyCropTrigerSize"],
+        hd_strategy_resize_limit=form["hdStrategyResizeLimit"],
+        prompt=form["prompt"],
+        negative_prompt=form["negativePrompt"],
+        use_croper=form["useCroper"],
+        croper_x=form["croperX"],
+        croper_y=form["croperY"],
+        croper_height=form["croperHeight"],
+        croper_width=form["croperWidth"],
+        sd_scale=form["sdScale"],
+        sd_mask_blur=form["sdMaskBlur"],
+        sd_strength=form["sdStrength"],
+        sd_steps=form["sdSteps"],
+        sd_guidance_scale=form["sdGuidanceScale"],
+        sd_sampler=form["sdSampler"],
+        sd_seed=form["sdSeed"],
+        sd_match_histograms=form["sdMatchHistograms"],
+        cv2_flag=form["cv2Flag"],
+        cv2_radius=form["cv2Radius"],
+        paint_by_example_steps=form["paintByExampleSteps"],
+        paint_by_example_guidance_scale=form["paintByExampleGuidanceScale"],
+        paint_by_example_mask_blur=form["paintByExampleMaskBlur"],
+        paint_by_example_seed=form["paintByExampleSeed"],
+        paint_by_example_match_histograms=form["paintByExampleMatchHistograms"],
+        paint_by_example_example_image=paint_by_example_example_image,
+        p2p_steps=form["p2pSteps"],
+        p2p_image_guidance_scale=form["p2pImageGuidanceScale"],
+        p2p_guidance_scale=form["p2pGuidanceScale"],
+        controlnet_conditioning_scale=form["controlnet_conditioning_scale"],
+        controlnet_method=form["controlnet_method"],
+    )
+
+    if config.sd_seed == -1:
+        config.sd_seed = random.randint(1, 999999999)
+    if config.paint_by_example_seed == -1:
+        config.paint_by_example_seed = random.randint(1, 999999999)
+
+    logger.info(f"Origin image shape: {original_shape}")
+    image = resize_max_size(image, size_limit=size_limit, interpolation=interpolation)
+
+    mask = resize_max_size(mask, size_limit=size_limit, interpolation=interpolation)
+
+    start = time.time()
+    try:
+        res_np_img = model(image, mask, config)
+    except RuntimeError as e:
+        if "CUDA out of memory. " in str(e):
+            # NOTE: the string may change?
+            return "CUDA out of memory", 500
+        else:
+            logger.exception(e)
+            return f"{str(e)}", 500
+    finally:
+        logger.info(f"process time: {(time.time() - start) * 1000}ms")
+        torch_gc()
+
+    res_np_img = cv2.cvtColor(res_np_img.astype(np.uint8), cv2.COLOR_BGR2RGB)
+    if alpha_channel is not None:
+        if alpha_channel.shape[:2] != res_np_img.shape[:2]:
+            alpha_channel = cv2.resize(
+                alpha_channel, dsize=(res_np_img.shape[1], res_np_img.shape[0])
+            )
+        res_np_img = np.concatenate(
+            (res_np_img, alpha_channel[:, :, np.newaxis]), axis=-1
+        )
+
+    ext = get_image_extension(orignalImage)
+    # ext='jpeg'
+    bytes_io = io.BytesIO(
+        pil_to_bytes(
+            Image.fromarray(res_np_img),
+            ext,
+            quality=image_quality,
+            exif_infos=exif_infos,
+        )
+    )
+    image_data = bytes_io.getvalue()
+    image_np = np.array(Image.open(io.BytesIO(image_data)))
+    image_rgb = cv2.cvtColor(image_np, cv2.COLOR_BGR2RGB)
+    # cv2.imshow("img image_np", cv2.resize(image_rgb, (500, 500)))
+    # cv2.waitKey(0)
+    # cv2.destroyAllWindows()
+    response = make_response(
+        send_file(
+            bytes_io,
+            mimetype=f"image/{ext}",
+        )
+    )
+    response.headers["X-Seed"] = str(config.sd_seed)
+    socketio.emit("diffusion_finish")
+    return response
