@@ -83,7 +83,7 @@ class NoFlaskwebgui(logging.Filter):
     def filter(self, record):
         msg = record.getMessage()
         if "Running on http:" in msg:
-            print(msg[msg.index("Running on http:") :])
+            print(msg[msg.index("Running on http:"):])
 
         return (
             "flaskwebgui-keep-server-alive" not in msg
@@ -219,23 +219,12 @@ def media_thumbnail_file(tab, filename):
 
 @app.route("/inpaint", methods=["POST"])
 def process():
-    print("im iin inpaint")
-    # logging.info("iiiiin inpaint")
     input = request.files
-    print("input==>:",request.files)
-    print("request.form is:",request.form)
-
     # RGB
     origin_image_bytes = input["image"].read()
     image, alpha_channel, exif_infos = load_img(origin_image_bytes, return_exif=True)
     mask, _ = load_img(input["mask"].read(), gray=True)
-    # cv2.imshow("mask", cv2.resize(mask, (500, 500)))
-    # cv2.waitKey(0)
-    # cv2.destroyAllWindows()
     mask = cv2.threshold(mask, 127, 255, cv2.THRESH_BINARY)[1]
-    # cv2.imshow("mask mask mask", cv2.resize(mask, (500, 500)))
-    # cv2.waitKey(0)
-    # cv2.destroyAllWindows()
     if image.shape[:2] != mask.shape[:2]:
         return (
             f"Mask shape{mask.shape[:2]} not queal to Image shape{image.shape[:2]}",
@@ -247,7 +236,6 @@ def process():
 
     form = request.form
     size_limit = max(image.shape)
-    print("input is:::",input)
     if "paintByExampleImage" in input:
         paint_by_example_example_image, _ = load_img(
             input["paintByExampleImage"].read()
@@ -319,9 +307,6 @@ def process():
         torch_gc()
 
     res_np_img = cv2.cvtColor(res_np_img.astype(np.uint8), cv2.COLOR_BGR2RGB)
-    # cv2.imshow("img", cv2.resize(res_np_img, (500, 500)))
-    # cv2.waitKey(0)
-    # cv2.destroyAllWindows()
     if alpha_channel is not None:
         if alpha_channel.shape[:2] != res_np_img.shape[:2]:
             alpha_channel = cv2.resize(
@@ -332,7 +317,6 @@ def process():
         )
 
     ext = get_image_ext(origin_image_bytes)
-
     bytes_io = io.BytesIO(
         pil_to_bytes(
             Image.fromarray(res_np_img),
@@ -341,16 +325,10 @@ def process():
             exif_infos=exif_infos,
         )
     )
-    print("bytes_io:",bytes_io)
     image_data = bytes_io.getvalue()
     image_np = np.array(Image.open(io.BytesIO(image_data)))
-    image_rgb = cv2.cvtColor(image_np, cv2.COLOR_BGR2RGB)
-    cv2.imshow("img image_np", cv2.resize(image_rgb, (500, 500)))
-    cv2.waitKey(0)
-    cv2.destroyAllWindows()
     response = make_response(
         send_file(
-            # io.BytesIO(numpy_to_bytes(res_np_img, ext)),
             bytes_io,
             mimetype=f"image/{ext}",
         )
@@ -648,7 +626,7 @@ def main(args):
         )
 
 
-
+6
 @app.route("/RemoveObjects", methods=["POST"])
 def ProcessRemoveObjects():
     form = request.form
@@ -719,7 +697,6 @@ def ProcessRemoveObjects():
 
     logger.info(f"Origin image shape: {original_shape}")
     image = resize_max_size(image, size_limit=size_limit, interpolation=interpolation)
-
     mask = resize_max_size(mask, size_limit=size_limit, interpolation=interpolation)
 
     start = time.time()
@@ -747,7 +724,6 @@ def ProcessRemoveObjects():
         )
 
     ext = get_image_extension(orignalImage)
-    # ext='jpeg'
     bytes_io = io.BytesIO(
         pil_to_bytes(
             Image.fromarray(res_np_img),
@@ -758,10 +734,6 @@ def ProcessRemoveObjects():
     )
     image_data = bytes_io.getvalue()
     image_np = np.array(Image.open(io.BytesIO(image_data)))
-    image_rgb = cv2.cvtColor(image_np, cv2.COLOR_BGR2RGB)
-    # cv2.imshow("img image_np", cv2.resize(image_rgb, (500, 500)))
-    # cv2.waitKey(0)
-    # cv2.destroyAllWindows()
     response = make_response(
         send_file(
             bytes_io,

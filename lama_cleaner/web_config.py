@@ -45,7 +45,6 @@ def save_config(
     enable_gif,
 ):
     config = Config(**locals())
-    print(config)
     if config.input and not os.path.exists(config.input):
         return "[Error] Input file or directory does not exist"
 
