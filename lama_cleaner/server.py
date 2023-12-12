@@ -626,7 +626,7 @@ def main(args):
         )
 
 
-6
+
 @app.route("/RemoveObjects", methods=["POST"])
 def ProcessRemoveObjects():
     form = request.form
